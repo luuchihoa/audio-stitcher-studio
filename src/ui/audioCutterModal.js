@@ -32,38 +32,56 @@ export class AudioCutterModal {
     backdrop.id = 'audio-cutter-backdrop';
 
     backdrop.innerHTML = `
-      <div class="modal-card" style="width: min(880px, 96vw); max-width: 880px; max-height: calc(100vh - 32px);">
+      <div class="modal-card" style="width: min(900px, 96vw); max-width: 900px; max-height: calc(100vh - 32px);">
         <div class="modal-header">
           <div class="modal-title">
             ${icons.scissors}
-            <span>Trình Cắt Audio & Chèn Khoảng Lặng</span>
+            <span>Trình Cắt Audio Chuyên Sâu</span>
           </div>
-          <button class="btn btn-secondary btn-icon" id="btn-close-cutter">
-            ${icons.x}
-          </button>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 0.82rem; font-family: var(--font-mono); color: var(--accent-cyan); font-weight: 600;" id="cutter-track-name">
+              Tên file âm thanh
+            </div>
+            <button class="btn btn-secondary btn-icon" id="btn-close-cutter" title="Đóng">
+              ${icons.x}
+            </button>
+          </div>
         </div>
 
         <div class="modal-body" style="gap: 12px;">
-          <!-- Track Name and Modes -->
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);" id="cutter-track-name">
-              Tên file âm thanh
-            </div>
-            
-            <div class="segment-group" id="cutter-mode-group">
-              <button type="button" class="segment-btn active" data-mode="crop" title="Giữ lại đoạn nằm trong vùng chọn">
-                Cắt & Giữ (Crop)
-              </button>
-              <button type="button" class="segment-btn" data-mode="cutout" title="Xóa bỏ đoạn lỗi ở giữa và nối 2 đầu lại">
-                Cắt Bỏ Giữa
-              </button>
-              <button type="button" class="segment-btn" data-mode="split" title="Chia clip làm 2 phần độc lập">
-                Tách Đôi
-              </button>
-              <button type="button" class="segment-btn" data-mode="silence" title="Chèn khoảng lặng hoặc tắt tiếng vùng chọn">
-                🔇 Chèn Khoảng Lặng
-              </button>
-            </div>
+          <!-- 4-Mode Navbar Tabs (Crop, Cutout, Split, Silence) -->
+          <div class="cutter-mode-navbar" id="cutter-mode-group">
+            <button type="button" class="cutter-nav-tab active" data-mode="crop">
+              <span class="tab-icon">✂️</span>
+              <div class="tab-info">
+                <span class="tab-title">Cắt & Giữ (Crop)</span>
+                <span class="tab-desc">Giữ vùng chọn</span>
+              </div>
+            </button>
+
+            <button type="button" class="cutter-nav-tab" data-mode="cutout">
+              <span class="tab-icon">⚡</span>
+              <div class="tab-info">
+                <span class="tab-title">Cắt Bỏ Giữa</span>
+                <span class="tab-desc">Xóa lỗi & nối 2 đầu</span>
+              </div>
+            </button>
+
+            <button type="button" class="cutter-nav-tab" data-mode="split">
+              <span class="tab-icon">🔀</span>
+              <div class="tab-info">
+                <span class="tab-title">Tách Đôi</span>
+                <span class="tab-desc">Chia làm 2 clip</span>
+              </div>
+            </button>
+
+            <button type="button" class="cutter-nav-tab" data-mode="silence">
+              <span class="tab-icon">🔇</span>
+              <div class="tab-info">
+                <span class="tab-title">Chèn Khoảng Lặng</span>
+                <span class="tab-desc">Giãn bài / Tắt tiếng</span>
+              </div>
+            </button>
           </div>
 
           <!-- Zoom & Pan Control Bar -->
@@ -82,22 +100,22 @@ export class AudioCutterModal {
             </div>
           </div>
 
-          <!-- Scrollable Waveform Viewport Area -->
-          <div id="cutter-scroll-area" style="position: relative; width: 100%; height: 130px; background: var(--bg-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; user-select: none;">
+          <!-- Main Scrollable Waveform Viewport Area (Always Visible) -->
+          <div id="cutter-scroll-area" style="position: relative; width: 100%; height: 140px; background: #080c14; border: 1px solid rgba(0, 240, 255, 0.25); border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; user-select: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.6);">
             
             <div id="cutter-waveform-inner" style="position: relative; height: 100%; min-width: 100%; cursor: crosshair;">
               
               <!-- Time Ruler Canvas atop waveform -->
-              <canvas id="cutter-ruler-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 20px; pointer-events: none; border-bottom: 1px solid rgba(255,255,255,0.06);"></canvas>
+              <canvas id="cutter-ruler-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 22px; pointer-events: auto; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08);"></canvas>
               
               <!-- Main Waveform Canvas -->
-              <canvas id="cutter-canvas" style="position: absolute; top: 20px; left: 0; width: 100%; height: calc(100% - 20px); display: block;"></canvas>
+              <canvas id="cutter-canvas" style="position: absolute; top: 22px; left: 0; width: 100%; height: calc(100% - 22px); display: block;"></canvas>
               
               <!-- Selection Overlay UI -->
-              <div id="cutter-selection-overlay" style="position: absolute; top: 20px; bottom: 0; pointer-events: none;"></div>
+              <div id="cutter-selection-overlay" style="position: absolute; top: 22px; bottom: 0; pointer-events: none;"></div>
               
               <!-- Drag Handles -->
-              <div class="cutter-handle" id="handle-start" title="Kéo để chỉnh điểm bắt đầu" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
+              <div class="cutter-handle" id="handle-start" title="Kéo để chỉnh vị trí" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
                 <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
                 <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
                 <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
@@ -110,7 +128,7 @@ export class AudioCutterModal {
               </div>
 
               <!-- Playhead -->
-              <div id="cutter-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ffffff; display: none; z-index: 12; pointer-events: none;">
+              <div id="cutter-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ffffff; display: none; z-index: 12; pointer-events: none; box-shadow: 0 0 8px rgba(255,255,255,0.8);">
                 <div style="width: 8px; height: 8px; border-radius: 50%; background: #ffffff; margin-left: -3px; margin-top: 0px;"></div>
               </div>
 
@@ -118,15 +136,15 @@ export class AudioCutterModal {
           </div>
 
           <!-- Silence Mode Specific Controls (Displayed only in Silence mode) -->
-          <div id="cutter-silence-options" style="display: none; background: rgba(18, 22, 31, 0.85); border: 1px solid var(--border-active); border-radius: var(--radius-md); padding: 10px 14px; flex-direction: column; gap: 8px;">
+          <div id="cutter-silence-options" style="display: none; background: rgba(18, 22, 31, 0.95); border: 1px solid var(--border-active); border-radius: var(--radius-md); padding: 10px 14px; flex-direction: column; gap: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <div class="segment-group" id="cutter-silence-submodes">
-                <button type="button" class="segment-btn active" data-submode="insert">Chèn thêm khoảng lặng (Giãn bài)</button>
-                <button type="button" class="segment-btn" data-submode="mute">Tắt tiếng vùng chọn (Mute)</button>
+                <button type="button" class="segment-btn active" data-submode="insert">➕ Chèn thêm khoảng lặng (Giãn bài)</button>
+                <button type="button" class="segment-btn" data-submode="mute">🔇 Tắt tiếng vùng chọn (Mute)</button>
               </div>
 
               <div id="cutter-silence-duration-group" style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Thời lượng:</span>
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Thời lượng chèn:</span>
                 <input type="number" id="cutter-silence-custom-input" min="0.1" max="60" step="0.1" value="1.0" class="silence-input" style="width: 54px; background: var(--bg-main); padding: 3px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.82rem;">
                 <span style="font-size: 0.75rem; color: var(--text-muted);">giây</span>
                 
@@ -140,7 +158,7 @@ export class AudioCutterModal {
             </div>
             <div style="font-size: 0.75rem; color: var(--accent-teal); display: flex; align-items: center; gap: 4px;">
               <span>👉</span>
-              <span id="cutter-silence-instruction-text">Kéo vạch Cyan đến vị trí muốn chèn khoảng lặng, sau đó chọn số giây và bấm Nghe thử hoặc Áp dụng.</span>
+              <span id="cutter-silence-instruction-text">Kéo vạch Xanh Lá đến vị trí muốn chèn khoảng lặng, sau đó chọn số giây và bấm Nghe thử hoặc Áp dụng.</span>
             </div>
           </div>
 
@@ -231,7 +249,7 @@ export class AudioCutterModal {
   attachEvents() {
     const closeBtn = this.modalEl.querySelector('#btn-close-cutter');
     const cancelBtn = this.modalEl.querySelector('#btn-cancel-cutter');
-    const modeBtns = this.modalEl.querySelectorAll('#cutter-mode-group .segment-btn');
+    const modeBtns = this.modalEl.querySelectorAll('#cutter-mode-group .cutter-nav-tab');
     const applyBtn = this.modalEl.querySelector('#btn-cutter-apply');
     const createNewBtn = this.modalEl.querySelector('#btn-cutter-create-new');
     const auditionBtn = this.modalEl.querySelector('#btn-cutter-audition');
@@ -255,6 +273,12 @@ export class AudioCutterModal {
       btn.addEventListener('click', () => {
         modeBtns.forEach(b => b.classList.toggle('active', b === btn));
         this.mode = btn.dataset.mode;
+        
+        // If switching to silence mode and start is 0, give it a visible initial position
+        if (this.mode === 'silence' && this.currentTrack && this.startTime === 0) {
+          this.startTime = this.cursorTime > 0 ? this.cursorTime : parseFloat((this.currentTrack.duration * 0.25).toFixed(2));
+        }
+
         this.updateModeUI();
       });
     });
@@ -685,7 +709,7 @@ export class AudioCutterModal {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const height = 24;
+    const height = 22;
 
     if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
       canvas.width = Math.round(width * dpr);
@@ -696,8 +720,8 @@ export class AudioCutterModal {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.lineWidth = 1;
 
@@ -722,7 +746,7 @@ export class AudioCutterModal {
       ctx.stroke();
 
       // Draw label
-      ctx.fillText(formatTime(time), x + 3, height - 8);
+      ctx.fillText(formatTime(time), x + 3, height - 7);
     }
 
     ctx.restore();
@@ -733,7 +757,7 @@ export class AudioCutterModal {
     if (!ctx || !this.currentTrack) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const height = 136;
+    const height = canvas.clientHeight || 118;
 
     if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
       canvas.width = Math.round(width * dpr);
@@ -752,23 +776,23 @@ export class AudioCutterModal {
 
     for (let i = 0; i < numBars; i++) {
       const barPct = i / numBars;
-      const peak = Math.max(0.04, peaks[i]);
-      const barHeight = peak * (height - 14);
+      const peak = Math.max(0.06, peaks[i]);
+      const barHeight = peak * (height - 12);
       const x = i * totalBarWidth;
       const y = centerY - barHeight / 2;
 
-      let color = 'rgba(255, 255, 255, 0.2)';
+      let color = 'rgba(0, 240, 255, 0.4)';
       if (this.mode === 'crop') {
         color = (barPct >= startPct && barPct <= endPct) ? '#00f0ff' : 'rgba(255, 255, 255, 0.15)';
       } else if (this.mode === 'cutout') {
         color = (barPct >= startPct && barPct <= endPct) ? '#f59e0b' : '#00f0ff';
       } else if (this.mode === 'split') {
-        color = (barPct <= startPct) ? '#00f0ff' : 'rgba(255, 255, 255, 0.35)';
+        color = (barPct <= startPct) ? '#00f0ff' : '#a855f7';
       } else if (this.mode === 'silence') {
         if (this.silenceSubMode === 'insert') {
-          color = (barPct <= startPct) ? '#10b981' : '#00f0ff';
+          color = '#00f0ff';
         } else {
-          color = (barPct >= startPct && barPct <= endPct) ? '#64748b' : '#00f0ff';
+          color = (barPct >= startPct && barPct <= endPct) ? 'rgba(239, 68, 68, 0.4)' : '#00f0ff';
         }
       }
 
@@ -776,6 +800,29 @@ export class AudioCutterModal {
       ctx.beginPath();
       ctx.roundRect(x, y, barWidth, barHeight, 1.5);
       ctx.fill();
+    }
+
+    // If in Silence -> Insert mode, draw a bright glowing vertical guide line at insertion point
+    if (this.mode === 'silence' && this.silenceSubMode === 'insert') {
+      const insertX = startPct * width;
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(insertX, 0);
+      ctx.lineTo(insertX, height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw pin badge
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.roundRect(Math.min(width - 90, Math.max(4, insertX - 45)), 4, 90, 16, 4);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "JetBrains Mono", sans-serif';
+      ctx.fillText(`📍 Chèn +${this.silenceDuration}s`, Math.min(width - 84, Math.max(10, insertX - 39)), 15);
     }
 
     ctx.restore();
