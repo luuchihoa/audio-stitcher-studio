@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Stitcher Studio - Trình Nối & Ghép Audio Hiện Đại</title>
+  <meta name="description" content="Trình ghép nối các file âm thanh ngắn trực tuyến, chèn khoảng lặng tùy chỉnh, hiển thị sóng âm, cắt trim và chuẩn hóa âm lượng. 100% xử lý tức thì trên trình duyệt.">
+  <link rel="stylesheet" href="/src/styles/index.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
+        <div>
+          <div class="brand-title">
+            Audio Stitcher Studio
+            <span class="brand-tag">In-Browser Pro</span>
+          </div>
+          <div class="brand-subtitle">Nối audio ngắn • Chèn khoảng lặng • Waveform • Chuẩn hóa âm lượng</div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="autosave-pill" id="autosave-status" style="display: none;">
+          <span class="autosave-dot" id="autosave-dot"></span>
+          <span id="autosave-text">Đã tự động lưu</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-load-samples" title="Tải 3 đoạn audio mẫu để trải nghiệm ngay">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          Thêm Audio Mẫu
+        </button>
+      </div>
+    </header>
+
+    <!-- Upload & Quick Action Area -->
+    <section class="dropzone" id="audio-dropzone">
+      <div class="dropzone-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <div class="dropzone-title">Kéo & Thả các file audio ngắn vào đây</div>
+      <div class="dropzone-subtitle">Hỗ trợ chọn nhiều file cùng lúc. Xử lý 100% trên máy tính của bạn với tốc độ tức thì.</div>
+      <div class="dropzone-formats">
+        <span class="format-badge">MP3</span>
+        <span class="format-badge">WAV</span>
+        <span class="format-badge">M4A</span>
+        <span class="format-badge">AAC</span>
+        <span class="format-badge">OGG</span>
+        <span class="format-badge">FLAC</span>
+      </div>
+
+      <div style="display: flex; gap: 12px; margin-top: 10px;">
+        <button type="button" class="btn btn-primary" id="btn-select-files">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Chọn file từ máy
+        </button>
+        <button type="button" class="btn btn-secondary" id="btn-open-mic">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          Thu âm Micro
+        </button>
+      </div>
+
+      <input type="file" id="file-input" multiple accept="audio/*" style="display: none;">
+    </section>
+
+    <!-- Studio Toolbar & Global Settings -->
+    <section class="studio-toolbar" id="studio-toolbar" style="display: none;">
+      <div class="toolbar-primary-group">
+        <button type="button" class="btn btn-primary btn-sm" id="btn-truncate-silence-modal" title="Tự động phát hiện và rút gọn khoảng im lặng dôi dư về 0.5s" style="box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+          ⚡ Cắt Âm Thanh Trống (Về 0.5s)
+        </button>
+
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-batch-silence-modal" title="Đặt khoảng lặng cho toàn bộ danh sách">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Khoảng lặng đồng loạt
+        </button>
+
+        <label class="control-label" style="cursor: pointer;">
+          <input type="checkbox" id="check-normalize" style="accent-color: var(--accent-cyan);">
+          <span>Chuẩn hóa âm lượng (Normalize)</span>
+        </label>
+
+        <div class="global-control-group">
+          <span class="control-label">Crossfade:</span>
+          <select id="select-crossfade" class="speed-select">
+            <option value="0">Tắt (0s)</option>
+            <option value="0.3">0.3s</option>
+            <option value="0.5">0.5s</option>
+            <option value="1">1.0s</option>
+            <option value="2">2.0s</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="toolbar-secondary-group">
+        <div class="stats-summary">
+          <div class="stat-item">
+            <span>Clips:</span>
+            <span class="stat-value" id="stat-clips-count">0</span>
+          </div>
+          <div class="stat-item">
+            <span>Tổng thời lượng:</span>
+            <span class="stat-value" id="stat-total-duration">00:00.0</span>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-danger-ghost btn-sm" id="btn-clear-all" title="Xóa toàn bộ danh sách">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Xóa tất cả
+        </button>
+      </div>
+    </section>
+
+    <!-- Timeline & Track List Section -->
+    <section class="timeline-section" id="timeline-section" style="display: none;">
+      <div class="timeline-header">
+        <div class="timeline-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          Danh sách Clip âm thanh (Kéo thả để sắp xếp lại vị trí)
+        </div>
+      </div>
+
+      <div class="timeline-track-list" id="track-list-container">
+        <!-- Rendered dynamically by trackCard.js -->
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Master Live Preview Floating Bar -->
+  <aside class="master-player-bar" id="master-player-bar" style="display: none;">
+    <div class="player-main-controls">
+      <button type="button" class="play-master-btn" id="btn-master-play" title="Phát / Dừng toàn bộ chuỗi đã nối">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <button type="button" class="btn btn-secondary btn-icon" id="btn-master-stop" title="Dừng và về đầu">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+      </button>
+    </div>
+
+    <div class="player-timeline-wrap">
+      <div class="player-timecodes">
+        <span id="player-current-time">00:00.0</span>
+        <span style="color: var(--accent-cyan); font-weight: 600;">LIVE PREVIEW</span>
+        <span id="player-total-time">00:00.0</span>
+      </div>
+      <input type="range" class="player-scrubber" id="master-scrubber" min="0" max="100" step="0.1" value="0">
+    </div>
+
+    <div class="player-options">
+      <select id="select-playback-speed" class="speed-select" title="Tốc độ nghe thử">
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1.0x (Chuẩn)</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2.0x</option>
+      </select>
+      
+      <button type="button" class="btn btn-secondary btn-icon" id="btn-master-loop" title="Lặp lại toàn chuỗi">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+
+    <button type="button" class="btn btn-primary" id="btn-open-export" style="font-weight: 700; padding: 10px 22px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Xuất File Nối
+    </button>
+  </aside>
+
+  <!-- Script entry point -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
