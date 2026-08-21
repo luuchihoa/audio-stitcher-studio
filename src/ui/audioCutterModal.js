@@ -32,21 +32,21 @@ export class AudioCutterModal {
     backdrop.id = 'audio-cutter-backdrop';
 
     backdrop.innerHTML = `
-      <div class="modal-card" style="width: min(900px, 96vw); max-width: 900px;">
+      <div class="modal-card" style="width: min(880px, 96vw); max-width: 880px; max-height: calc(100vh - 32px);">
         <div class="modal-header">
           <div class="modal-title">
             ${icons.scissors}
-            <span>Trình Cắt Audio & Chèn Khoảng Lặng Chuyên Sâu</span>
+            <span>Trình Cắt Audio & Chèn Khoảng Lặng</span>
           </div>
           <button class="btn btn-secondary btn-icon" id="btn-close-cutter">
             ${icons.x}
           </button>
         </div>
 
-        <div class="modal-body" style="gap: 16px;">
+        <div class="modal-body" style="gap: 12px;">
           <!-- Track Name and Modes -->
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);" id="cutter-track-name">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);" id="cutter-track-name">
               Tên file âm thanh
             </div>
             
@@ -67,46 +67,46 @@ export class AudioCutterModal {
           </div>
 
           <!-- Zoom & Pan Control Bar -->
-          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: var(--bg-surface-elevated); padding: 8px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">🔍 Thu / Phóng:</span>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-out" title="Thu nhỏ (Zoom out)">-</button>
-              <input type="range" id="cutter-zoom-slider" min="1" max="10" step="0.2" value="1" style="width: 130px;" title="Thanh trượt Zoom">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-in" title="Phóng to (Zoom in)">+</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-reset" title="Về 1x">1x</button>
-              <span style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--accent-cyan);" id="cutter-zoom-label">1.0x</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--bg-surface-elevated); padding: 6px 12px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-secondary);">🔍 Zoom:</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-out" style="padding: 2px 8px;" title="Thu nhỏ">-</button>
+              <input type="range" id="cutter-zoom-slider" min="1" max="10" step="0.2" value="1" style="width: 110px;" title="Thanh trượt Zoom">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-in" style="padding: 2px 8px;" title="Phóng to">+</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-reset" style="padding: 2px 8px;" title="Về 1x">1x</button>
+              <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700; color: var(--accent-cyan);" id="cutter-zoom-label">1.0x</span>
             </div>
 
-            <div style="font-size: 0.78rem; color: var(--text-muted);">
-              💡 <em>Mẹo: Cuộn chuột hoặc kéo thanh cuộn ngang khi phóng to</em>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">
+              💡 <em>Cuộn chuột hoặc kéo thanh trượt khi phóng to</em>
             </div>
           </div>
 
           <!-- Scrollable Waveform Viewport Area -->
-          <div id="cutter-scroll-area" style="position: relative; width: 100%; height: 160px; background: var(--bg-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; user-select: none;">
+          <div id="cutter-scroll-area" style="position: relative; width: 100%; height: 130px; background: var(--bg-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; user-select: none;">
             
             <div id="cutter-waveform-inner" style="position: relative; height: 100%; min-width: 100%; cursor: crosshair;">
               
               <!-- Time Ruler Canvas atop waveform -->
-              <canvas id="cutter-ruler-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 24px; pointer-events: none; border-bottom: 1px solid rgba(255,255,255,0.06);"></canvas>
+              <canvas id="cutter-ruler-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 20px; pointer-events: none; border-bottom: 1px solid rgba(255,255,255,0.06);"></canvas>
               
               <!-- Main Waveform Canvas -->
-              <canvas id="cutter-canvas" style="position: absolute; top: 24px; left: 0; width: 100%; height: calc(100% - 24px); display: block;"></canvas>
+              <canvas id="cutter-canvas" style="position: absolute; top: 20px; left: 0; width: 100%; height: calc(100% - 20px); display: block;"></canvas>
               
               <!-- Selection Overlay UI -->
-              <div id="cutter-selection-overlay" style="position: absolute; top: 24px; bottom: 0; pointer-events: none;"></div>
+              <div id="cutter-selection-overlay" style="position: absolute; top: 20px; bottom: 0; pointer-events: none;"></div>
               
               <!-- Drag Handles -->
               <div class="cutter-handle" id="handle-start" title="Kéo để chỉnh điểm bắt đầu" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
-                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
                 <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
-                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
               </div>
 
               <div class="cutter-handle" id="handle-end" title="Kéo để chỉnh điểm kết thúc" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
-                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
                 <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
-                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
               </div>
 
               <!-- Playhead -->
@@ -118,17 +118,17 @@ export class AudioCutterModal {
           </div>
 
           <!-- Silence Mode Specific Controls (Displayed only in Silence mode) -->
-          <div id="cutter-silence-options" style="display: none; background: rgba(18, 22, 31, 0.85); border: 1px solid var(--border-active); border-radius: var(--radius-md); padding: 14px 18px; flex-direction: column; gap: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div id="cutter-silence-options" style="display: none; background: rgba(18, 22, 31, 0.85); border: 1px solid var(--border-active); border-radius: var(--radius-md); padding: 10px 14px; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <div class="segment-group" id="cutter-silence-submodes">
                 <button type="button" class="segment-btn active" data-submode="insert">Chèn thêm khoảng lặng (Giãn bài)</button>
                 <button type="button" class="segment-btn" data-submode="mute">Tắt tiếng vùng chọn (Mute)</button>
               </div>
 
-              <div id="cutter-silence-duration-group" style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);">Thời lượng chèn:</span>
-                <input type="number" id="cutter-silence-custom-input" min="0.1" max="60" step="0.1" value="1.0" class="silence-input" style="width: 58px; background: var(--bg-main); padding: 4px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center; color: var(--accent-cyan); font-weight: 700;">
-                <span style="font-size: 0.78rem; color: var(--text-muted);">giây</span>
+              <div id="cutter-silence-duration-group" style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Thời lượng:</span>
+                <input type="number" id="cutter-silence-custom-input" min="0.1" max="60" step="0.1" value="1.0" class="silence-input" style="width: 54px; background: var(--bg-main); padding: 3px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.82rem;">
+                <span style="font-size: 0.75rem; color: var(--text-muted);">giây</span>
                 
                 <div class="silence-presets">
                   <button type="button" class="preset-chip" data-val="0.5">0.5s</button>
@@ -137,6 +137,10 @@ export class AudioCutterModal {
                   <button type="button" class="preset-chip" data-val="3.0">3.0s</button>
                 </div>
               </div>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--accent-teal); display: flex; align-items: center; gap: 4px;">
+              <span>👉</span>
+              <span id="cutter-silence-instruction-text">Kéo vạch Cyan đến vị trí muốn chèn khoảng lặng, sau đó chọn số giây và bấm Nghe thử hoặc Áp dụng.</span>
             </div>
           </div>
 
@@ -498,6 +502,8 @@ export class AudioCutterModal {
         textBtnAudition.textContent = 'Nghe thử sau khi chèn';
         textBtnApply.textContent = `Chèn thêm ${this.silenceDuration}s Khoảng Lặng`;
         hintText.textContent = `Chèn thêm ${this.silenceDuration}s im lặng tại mốc thời gian đã chọn, kéo giãn tổng độ dài clip.`;
+        const instructionText = this.modalEl.querySelector('#cutter-silence-instruction-text');
+        if (instructionText) instructionText.textContent = 'Kéo vạch Cyan đến vị trí muốn chèn khoảng lặng, chọn số giây và bấm Nghe thử hoặc Áp dụng.';
       } else {
         handleStart.style.display = 'flex';
         handleEnd.style.display = 'flex';
@@ -507,6 +513,8 @@ export class AudioCutterModal {
         textBtnAudition.textContent = 'Nghe thử sau khi tắt tiếng';
         textBtnApply.textContent = 'Tắt Tiếng Vùng Chọn (Mute)';
         hintText.textContent = 'Làm câm hoàn toàn đoạn nằm giữa 2 vạch cyan mà không thay đổi tổng thời lượng.';
+        const instructionText = this.modalEl.querySelector('#cutter-silence-instruction-text');
+        if (instructionText) instructionText.textContent = 'Kéo 2 vạch Cyan (Start & End) để chọn đoạn cần tắt tiếng (Mute), sau đó bấm Áp dụng.';
       }
     }
 
