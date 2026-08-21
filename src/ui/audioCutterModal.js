@@ -1,7 +1,7 @@
 import { icons } from './icons.js';
 import { formatTime } from './trackCard.js';
 import { getAudioContext } from '../audio/audioContext.js';
-import { sliceAudioBuffer, spliceCutOutAudioBuffer, splitAudioBuffer } from '../audio/bufferCutter.js';
+import { sliceAudioBuffer, spliceCutOutAudioBuffer, splitAudioBuffer, insertSilenceIntoAudioBuffer, muteRegionAudioBuffer } from '../audio/bufferCutter.js';
 import { extractWaveformData } from '../audio/decoder.js';
 
 export class AudioCutterModal {
@@ -9,16 +9,19 @@ export class AudioCutterModal {
     this.callbacks = callbacks || {};
     this.modalEl = null;
     this.currentTrack = null;
-    this.mode = 'crop'; // 'crop' | 'cutout' | 'split'
+    this.mode = 'crop'; // 'crop' | 'cutout' | 'split' | 'silence'
+    this.silenceSubMode = 'insert'; // 'insert' | 'mute'
+    this.silenceDuration = 1.0;
+    this.zoomLevel = 1.0; // 1x to 10x
     this.startTime = 0;
     this.endTime = 0;
-    this.splitTime = 0;
     this.isPlaying = false;
     this.activeSource = null;
     this.playStartTime = 0;
     this.playDuration = 0;
     this.animFrame = null;
-    this.draggingHandle = null; // 'start' | 'end' | 'split' | null
+    this.draggingHandle = null; // 'start' | 'end' | null
+    this.highResPeaks = [];
 
     this.initDOM();
   }
@@ -29,18 +32,18 @@ export class AudioCutterModal {
     backdrop.id = 'audio-cutter-backdrop';
 
     backdrop.innerHTML = `
-      <div class="modal-card" style="width: min(800px, 96vw); max-width: 800px;">
+      <div class="modal-card" style="width: min(900px, 96vw); max-width: 900px;">
         <div class="modal-header">
           <div class="modal-title">
             ${icons.scissors}
-            <span>Trình Cắt Audio Chuyên Sâu</span>
+            <span>Trình Cắt Audio & Chèn Khoảng Lặng Chuyên Sâu</span>
           </div>
           <button class="btn btn-secondary btn-icon" id="btn-close-cutter">
             ${icons.x}
           </button>
         </div>
 
-        <div class="modal-body" style="gap: 18px;">
+        <div class="modal-body" style="gap: 16px;">
           <!-- Track Name and Modes -->
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);" id="cutter-track-name">
@@ -52,46 +55,97 @@ export class AudioCutterModal {
                 Cắt & Giữ (Crop)
               </button>
               <button type="button" class="segment-btn" data-mode="cutout" title="Xóa bỏ đoạn lỗi ở giữa và nối 2 đầu lại">
-                Cắt Bỏ Giữa (Cut-Out)
+                Cắt Bỏ Giữa
               </button>
               <button type="button" class="segment-btn" data-mode="split" title="Chia clip làm 2 phần độc lập">
-                Tách Đôi (Split)
+                Tách Đôi
+              </button>
+              <button type="button" class="segment-btn" data-mode="silence" title="Chèn khoảng lặng hoặc tắt tiếng vùng chọn">
+                🔇 Chèn Khoảng Lặng
               </button>
             </div>
           </div>
 
-          <!-- Large Interactive Waveform Container -->
-          <div class="cutter-waveform-container" id="cutter-waveform-wrap" style="position: relative; height: 140px; background: var(--bg-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; cursor: crosshair; user-select: none;">
-            <canvas id="cutter-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
-            
-            <!-- Selection Overlay UI -->
-            <div id="cutter-selection-overlay" style="position: absolute; top: 0; bottom: 0; pointer-events: none;"></div>
-            
-            <!-- Drag Handles -->
-            <div class="cutter-handle" id="handle-start" title="Kéo để chỉnh điểm bắt đầu" style="position: absolute; top: 0; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
-              <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
-              <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
-              <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+          <!-- Zoom & Pan Control Bar -->
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: var(--bg-surface-elevated); padding: 8px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">🔍 Thu / Phóng:</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-out" title="Thu nhỏ (Zoom out)">-</button>
+              <input type="range" id="cutter-zoom-slider" min="1" max="10" step="0.2" value="1" style="width: 130px;" title="Thanh trượt Zoom">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-in" title="Phóng to (Zoom in)">+</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-reset" title="Về 1x">1x</button>
+              <span style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--accent-cyan);" id="cutter-zoom-label">1.0x</span>
             </div>
 
-            <div class="cutter-handle" id="handle-end" title="Kéo để chỉnh điểm kết thúc" style="position: absolute; top: 0; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
-              <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
-              <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
-              <div style="width: 12px; height: 16px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">
+              💡 <em>Mẹo: Cuộn chuột hoặc kéo thanh cuộn ngang khi phóng to</em>
             </div>
+          </div>
 
-            <!-- Playhead -->
-            <div id="cutter-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ffffff; display: none; z-index: 12; pointer-events: none;">
-              <div style="width: 8px; height: 8px; border-radius: 50%; background: #ffffff; margin-left: -3px; margin-top: -4px;"></div>
+          <!-- Scrollable Waveform Viewport Area -->
+          <div id="cutter-scroll-area" style="position: relative; width: 100%; height: 160px; background: var(--bg-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; user-select: none;">
+            
+            <div id="cutter-waveform-inner" style="position: relative; height: 100%; min-width: 100%; cursor: crosshair;">
+              
+              <!-- Time Ruler Canvas atop waveform -->
+              <canvas id="cutter-ruler-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 24px; pointer-events: none; border-bottom: 1px solid rgba(255,255,255,0.06);"></canvas>
+              
+              <!-- Main Waveform Canvas -->
+              <canvas id="cutter-canvas" style="position: absolute; top: 24px; left: 0; width: 100%; height: calc(100% - 24px); display: block;"></canvas>
+              
+              <!-- Selection Overlay UI -->
+              <div id="cutter-selection-overlay" style="position: absolute; top: 24px; bottom: 0; pointer-events: none;"></div>
+              
+              <!-- Drag Handles -->
+              <div class="cutter-handle" id="handle-start" title="Kéo để chỉnh điểm bắt đầu" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
+                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
+                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+              </div>
+
+              <div class="cutter-handle" id="handle-end" title="Kéo để chỉnh điểm kết thúc" style="position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; align-items: center;">
+                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 3px 3px 0 0; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+                <div style="width: 2px; height: 100%; background: var(--accent-cyan);"></div>
+                <div style="width: 12px; height: 18px; background: var(--accent-cyan); border-radius: 0 0 3px 3px; box-shadow: 0 0 8px rgba(0,240,255,0.8);"></div>
+              </div>
+
+              <!-- Playhead -->
+              <div id="cutter-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ffffff; display: none; z-index: 12; pointer-events: none;">
+                <div style="width: 8px; height: 8px; border-radius: 50%; background: #ffffff; margin-left: -3px; margin-top: 0px;"></div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Silence Mode Specific Controls (Displayed only in Silence mode) -->
+          <div id="cutter-silence-options" style="display: none; background: rgba(18, 22, 31, 0.85); border: 1px solid var(--border-active); border-radius: var(--radius-md); padding: 14px 18px; flex-direction: column; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div class="segment-group" id="cutter-silence-submodes">
+                <button type="button" class="segment-btn active" data-submode="insert">Chèn thêm khoảng lặng (Giãn bài)</button>
+                <button type="button" class="segment-btn" data-submode="mute">Tắt tiếng vùng chọn (Mute)</button>
+              </div>
+
+              <div id="cutter-silence-duration-group" style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);">Thời lượng chèn:</span>
+                <input type="number" id="cutter-silence-custom-input" min="0.1" max="60" step="0.1" value="1.0" class="silence-input" style="width: 58px; background: var(--bg-main); padding: 4px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); text-align: center; color: var(--accent-cyan); font-weight: 700;">
+                <span style="font-size: 0.78rem; color: var(--text-muted);">giây</span>
+                
+                <div class="silence-presets">
+                  <button type="button" class="preset-chip" data-val="0.5">0.5s</button>
+                  <button type="button" class="preset-chip active" data-val="1.0">1.0s</button>
+                  <button type="button" class="preset-chip" data-val="2.0">2.0s</button>
+                  <button type="button" class="preset-chip" data-val="3.0">3.0s</button>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- Precision Time Controls & Steppers -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; background: var(--bg-surface-elevated); padding: 14px 18px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; background: var(--bg-surface-elevated); padding: 12px 18px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
             
             <div class="form-group" id="group-cutter-start">
               <label class="form-label" style="display: flex; justify-content: space-between;">
-                <span>Điểm bắt đầu (Start)</span>
+                <span id="label-cutter-start">Điểm bắt đầu (Start)</span>
                 <span style="font-family: var(--font-mono); color: var(--accent-cyan); font-weight: 700;" id="cutter-text-start">00:00.0</span>
               </label>
               <div style="display: flex; gap: 6px;">
@@ -116,8 +170,8 @@ export class AudioCutterModal {
             </div>
 
             <div class="form-group" style="justify-content: center;">
-              <div style="font-size: 0.8rem; color: var(--text-secondary);" id="cutter-stat-label">Thời lượng sau khi cắt:</div>
-              <div style="font-family: var(--font-mono); font-size: 1.25rem; font-weight: 800; color: var(--text-primary);" id="cutter-stat-duration">
+              <div style="font-size: 0.8rem; color: var(--text-secondary);" id="cutter-stat-label">Thời lượng sau khi xử lý:</div>
+              <div style="font-family: var(--font-mono); font-size: 1.2rem; font-weight: 800; color: var(--text-primary);" id="cutter-stat-duration">
                 00:00.0
               </div>
             </div>
@@ -145,14 +199,14 @@ export class AudioCutterModal {
         <div class="modal-footer" style="margin-top: 10px;">
           <button type="button" class="btn btn-secondary" id="btn-cancel-cutter">Hủy bỏ</button>
           
-          <button type="button" class="btn btn-secondary" id="btn-cutter-create-new" title="Giữ nguyên clip cũ và tạo thêm clip mới đã cắt">
+          <button type="button" class="btn btn-secondary" id="btn-cutter-create-new" title="Giữ nguyên clip cũ và tạo thêm clip mới đã xử lý">
             ${icons.copy}
             Tạo Clip Mới
           </button>
 
           <button type="button" class="btn btn-primary" id="btn-cutter-apply">
             ${icons.check}
-            <span id="text-btn-apply">Áp dụng Cắt</span>
+            <span id="text-btn-apply">Áp dụng</span>
           </button>
         </div>
       </div>
@@ -173,6 +227,12 @@ export class AudioCutterModal {
     const auditionBtn = this.modalEl.querySelector('#btn-cutter-audition');
     const stopBtn = this.modalEl.querySelector('#btn-cutter-stop');
 
+    // Zoom buttons & slider
+    const zoomSlider = this.modalEl.querySelector('#cutter-zoom-slider');
+    const zoomInBtn = this.modalEl.querySelector('#btn-zoom-in');
+    const zoomOutBtn = this.modalEl.querySelector('#btn-zoom-out');
+    const zoomResetBtn = this.modalEl.querySelector('#btn-zoom-reset');
+
     const close = () => {
       this.stopAudition();
       this.modalEl.classList.remove('open');
@@ -186,6 +246,48 @@ export class AudioCutterModal {
         modeBtns.forEach(b => b.classList.toggle('active', b === btn));
         this.mode = btn.dataset.mode;
         this.updateModeUI();
+      });
+    });
+
+    // Zoom events
+    zoomSlider.addEventListener('input', (e) => {
+      this.setZoom(parseFloat(e.target.value));
+    });
+    zoomInBtn.addEventListener('click', () => {
+      this.setZoom(Math.min(10, this.zoomLevel + 0.5));
+    });
+    zoomOutBtn.addEventListener('click', () => {
+      this.setZoom(Math.max(1, this.zoomLevel - 0.5));
+    });
+    zoomResetBtn.addEventListener('click', () => {
+      this.setZoom(1.0);
+    });
+
+    // Silence mode events
+    const silenceSubmodeBtns = this.modalEl.querySelectorAll('#cutter-silence-submodes .segment-btn');
+    const silenceInput = this.modalEl.querySelector('#cutter-silence-custom-input');
+    const silencePresets = this.modalEl.querySelectorAll('#cutter-silence-options .preset-chip');
+
+    silenceSubmodeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        silenceSubmodeBtns.forEach(b => b.classList.toggle('active', b === btn));
+        this.silenceSubMode = btn.dataset.submode;
+        this.updateModeUI();
+      });
+    });
+
+    silenceInput.addEventListener('input', (e) => {
+      this.silenceDuration = Math.max(0.05, parseFloat(e.target.value) || 1.0);
+      silencePresets.forEach(b => b.classList.toggle('active', parseFloat(b.dataset.val) === this.silenceDuration));
+      this.updateHandlesAndCanvas();
+    });
+
+    silencePresets.forEach(btn => {
+      btn.addEventListener('click', () => {
+        silencePresets.forEach(b => b.classList.toggle('active', b === btn));
+        this.silenceDuration = parseFloat(btn.dataset.val) || 1.0;
+        silenceInput.value = this.silenceDuration;
+        this.updateHandlesAndCanvas();
       });
     });
 
@@ -222,13 +324,24 @@ export class AudioCutterModal {
     this.setupWaveformInteractions();
   }
 
+  setZoom(level) {
+    this.zoomLevel = Math.max(1, Math.min(10, parseFloat(level.toFixed(1))));
+    const slider = this.modalEl.querySelector('#cutter-zoom-slider');
+    const label = this.modalEl.querySelector('#cutter-zoom-label');
+    slider.value = this.zoomLevel;
+    label.textContent = `${this.zoomLevel.toFixed(1)}x`;
+
+    this.updateHandlesAndCanvas();
+  }
+
   setupWaveformInteractions() {
-    const wrap = this.modalEl.querySelector('#cutter-waveform-wrap');
+    const scrollArea = this.modalEl.querySelector('#cutter-scroll-area');
+    const innerWrap = this.modalEl.querySelector('#cutter-waveform-inner');
     const handleStart = this.modalEl.querySelector('#handle-start');
     const handleEnd = this.modalEl.querySelector('#handle-end');
 
     const getTimeFromX = (clientX) => {
-      const rect = wrap.getBoundingClientRect();
+      const rect = innerWrap.getBoundingClientRect();
       const clickX = Math.max(0, Math.min(rect.width, clientX - rect.left));
       const pct = clickX / rect.width;
       return pct * (this.currentTrack ? this.currentTrack.duration : 1);
@@ -244,11 +357,11 @@ export class AudioCutterModal {
       this.draggingHandle = 'end';
     });
 
-    wrap.addEventListener('mousedown', (e) => {
+    innerWrap.addEventListener('mousedown', (e) => {
       if (this.draggingHandle) return;
       const clickedTime = getTimeFromX(e.clientX);
-      if (this.mode === 'split') {
-        this.splitTime = clickedTime;
+      
+      if (this.mode === 'split' || (this.mode === 'silence' && this.silenceSubMode === 'insert')) {
         this.startTime = clickedTime;
       } else {
         const distStart = Math.abs(clickedTime - this.startTime);
@@ -267,7 +380,11 @@ export class AudioCutterModal {
       const curTime = getTimeFromX(e.clientX);
 
       if (this.draggingHandle === 'start') {
-        this.startTime = Math.max(0, Math.min(curTime, this.endTime - 0.05));
+        if (this.mode === 'split' || (this.mode === 'silence' && this.silenceSubMode === 'insert')) {
+          this.startTime = Math.max(0, Math.min(this.currentTrack.duration, curTime));
+        } else {
+          this.startTime = Math.max(0, Math.min(curTime, this.endTime - 0.05));
+        }
       } else if (this.draggingHandle === 'end') {
         this.endTime = Math.min(this.currentTrack.duration, Math.max(curTime, this.startTime + 0.05));
       }
@@ -278,40 +395,26 @@ export class AudioCutterModal {
       this.draggingHandle = null;
     });
 
-    // Touch support for mobile/tablets
-    wrap.addEventListener('touchstart', (e) => {
-      if (e.touches.length > 0) {
-        const touch = e.touches[0];
-        const curTime = getTimeFromX(touch.clientX);
-        const distStart = Math.abs(curTime - this.startTime);
-        const distEnd = Math.abs(curTime - this.endTime);
-        this.draggingHandle = distStart < distEnd ? 'start' : 'end';
+    // Mouse wheel horizontal scroll and zoom with Ctrl/Alt
+    scrollArea.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.altKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.3 : -0.3;
+        this.setZoom(this.zoomLevel + delta);
       }
-    }, { passive: true });
-
-    wrap.addEventListener('touchmove', (e) => {
-      if (!this.draggingHandle || !this.currentTrack || e.touches.length === 0) return;
-      const touch = e.touches[0];
-      const curTime = getTimeFromX(touch.clientX);
-
-      if (this.draggingHandle === 'start') {
-        this.startTime = Math.max(0, Math.min(curTime, this.endTime - 0.05));
-      } else if (this.draggingHandle === 'end') {
-        this.endTime = Math.min(this.currentTrack.duration, Math.max(curTime, this.startTime + 0.05));
-      }
-      this.updateHandlesAndCanvas();
-    }, { passive: true });
-
-    wrap.addEventListener('touchend', () => {
-      this.draggingHandle = null;
-    });
+    }, { passive: false });
   }
 
   open(track) {
     this.currentTrack = track;
     this.startTime = Math.max(0, track.trimStart || 0);
     this.endTime = Math.min(track.duration, track.trimEnd ?? track.duration);
-    this.splitTime = track.duration * 0.5;
+    this.zoomLevel = 1.0;
+    this.setZoom(1.0);
+
+    // Extract dense high-resolution peaks for crisp zoom rendering
+    const denseBins = Math.max(300, Math.min(3000, Math.round(track.duration * 60)));
+    this.highResPeaks = extractWaveformData(track.audioBuffer, denseBins).peaks;
 
     this.modalEl.querySelector('#cutter-track-name').textContent = `✂️ ${track.name}`;
     this.updateModeUI();
@@ -328,8 +431,10 @@ export class AudioCutterModal {
 
     if (type === 'start') {
       this.startTime = Math.max(0, Math.min(dur, parseFloat((this.startTime + delta).toFixed(2))));
-      if (this.startTime >= this.endTime - 0.05) {
-        this.startTime = Math.max(0, this.endTime - 0.05);
+      if (this.mode !== 'split' && !(this.mode === 'silence' && this.silenceSubMode === 'insert')) {
+        if (this.startTime >= this.endTime - 0.05) {
+          this.startTime = Math.max(0, this.endTime - 0.05);
+        }
       }
     } else {
       this.endTime = Math.max(0, Math.min(dur, parseFloat((this.endTime + delta).toFixed(2))));
@@ -348,12 +453,17 @@ export class AudioCutterModal {
     const textBtnApply = this.modalEl.querySelector('#text-btn-apply');
     const btnCreateNew = this.modalEl.querySelector('#btn-cutter-create-new');
     const hintText = this.modalEl.querySelector('#cutter-hint-text');
+    const silenceOptions = this.modalEl.querySelector('#cutter-silence-options');
+    const labelStart = this.modalEl.querySelector('#label-cutter-start');
+
+    silenceOptions.style.display = this.mode === 'silence' ? 'flex' : 'none';
 
     if (this.mode === 'crop') {
       handleStart.style.display = 'flex';
       handleEnd.style.display = 'flex';
       groupEnd.style.display = 'flex';
       btnCreateNew.style.display = 'inline-flex';
+      labelStart.textContent = 'Điểm bắt đầu (Start)';
       textBtnAudition.textContent = 'Nghe thử vùng chọn';
       textBtnApply.textContent = 'Áp dụng Cắt & Giữ';
       hintText.textContent = 'Giữ lại đoạn nằm giữa 2 vạch cyan, loại bỏ phần thừa.';
@@ -362,6 +472,7 @@ export class AudioCutterModal {
       handleEnd.style.display = 'flex';
       groupEnd.style.display = 'flex';
       btnCreateNew.style.display = 'inline-flex';
+      labelStart.textContent = 'Điểm bắt đầu (Start)';
       textBtnAudition.textContent = 'Nghe thử sau khi xóa';
       textBtnApply.textContent = 'Áp dụng Cắt Bỏ Đoạn Này';
       hintText.textContent = 'Xóa đoạn màu cam ở giữa và nối liền 2 đầu lại với micro-crossfade.';
@@ -370,9 +481,33 @@ export class AudioCutterModal {
       handleEnd.style.display = 'none';
       groupEnd.style.display = 'none';
       btnCreateNew.style.display = 'none';
+      labelStart.textContent = 'Vị trí chia tách (Split)';
       textBtnAudition.textContent = 'Nghe thử nửa đầu';
       textBtnApply.textContent = 'Tách làm 2 Clip trên Timeline';
       hintText.textContent = 'Kéo vạch cyan đến vị trí muốn chia clip thành 2 phần độc lập.';
+    } else if (this.mode === 'silence') {
+      btnCreateNew.style.display = 'inline-flex';
+      const durationGroup = this.modalEl.querySelector('#cutter-silence-duration-group');
+
+      if (this.silenceSubMode === 'insert') {
+        handleStart.style.display = 'flex';
+        handleEnd.style.display = 'none';
+        groupEnd.style.display = 'none';
+        durationGroup.style.display = 'flex';
+        labelStart.textContent = 'Vị trí chèn khoảng lặng';
+        textBtnAudition.textContent = 'Nghe thử sau khi chèn';
+        textBtnApply.textContent = `Chèn thêm ${this.silenceDuration}s Khoảng Lặng`;
+        hintText.textContent = `Chèn thêm ${this.silenceDuration}s im lặng tại mốc thời gian đã chọn, kéo giãn tổng độ dài clip.`;
+      } else {
+        handleStart.style.display = 'flex';
+        handleEnd.style.display = 'flex';
+        groupEnd.style.display = 'flex';
+        durationGroup.style.display = 'none';
+        labelStart.textContent = 'Điểm bắt đầu tắt tiếng';
+        textBtnAudition.textContent = 'Nghe thử sau khi tắt tiếng';
+        textBtnApply.textContent = 'Tắt Tiếng Vùng Chọn (Mute)';
+        hintText.textContent = 'Làm câm hoàn toàn đoạn nằm giữa 2 vạch cyan mà không thay đổi tổng thời lượng.';
+      }
     }
 
     this.updateHandlesAndCanvas();
@@ -381,8 +516,10 @@ export class AudioCutterModal {
   updateHandlesAndCanvas() {
     if (!this.currentTrack) return;
     const dur = this.currentTrack.duration;
+    const scrollArea = this.modalEl.querySelector('#cutter-scroll-area');
+    const innerWrap = this.modalEl.querySelector('#cutter-waveform-inner');
     const canvas = this.modalEl.querySelector('#cutter-canvas');
-    const wrap = this.modalEl.querySelector('#cutter-waveform-wrap');
+    const rulerCanvas = this.modalEl.querySelector('#cutter-ruler-canvas');
     const handleStart = this.modalEl.querySelector('#handle-start');
     const handleEnd = this.modalEl.querySelector('#handle-end');
     const overlay = this.modalEl.querySelector('#cutter-selection-overlay');
@@ -392,17 +529,22 @@ export class AudioCutterModal {
     const statLabel = this.modalEl.querySelector('#cutter-stat-label');
     const statDuration = this.modalEl.querySelector('#cutter-stat-duration');
 
+    // Calculate dynamic container width based on zoom level
+    const baseWidth = scrollArea.clientWidth || 750;
+    const totalWidth = Math.round(baseWidth * this.zoomLevel);
+    innerWrap.style.width = `${totalWidth}px`;
+
     const startPct = Math.max(0, Math.min(1, this.startTime / dur));
     const endPct = Math.max(0, Math.min(1, this.endTime / dur));
 
     // Update Handles Position
-    handleStart.style.left = `${startPct * 100}%`;
-    handleEnd.style.left = `${endPct * 100}%`;
+    handleStart.style.left = `${startPct * totalWidth}px`;
+    handleEnd.style.left = `${endPct * totalWidth}px`;
 
     // Update Selection Overlay
     if (this.mode === 'crop') {
-      overlay.style.left = `${startPct * 100}%`;
-      overlay.style.width = `${(endPct - startPct) * 100}%`;
+      overlay.style.left = `${startPct * totalWidth}px`;
+      overlay.style.width = `${(endPct - startPct) * totalWidth}px`;
       overlay.style.background = 'rgba(0, 240, 255, 0.15)';
       overlay.style.borderLeft = '1px solid var(--accent-cyan)';
       overlay.style.borderRight = '1px solid var(--accent-cyan)';
@@ -411,9 +553,10 @@ export class AudioCutterModal {
       textEnd.textContent = formatTime(this.endTime);
       statLabel.textContent = 'Thời lượng sau khi giữ:';
       statDuration.textContent = formatTime(Math.max(0, this.endTime - this.startTime));
+
     } else if (this.mode === 'cutout') {
-      overlay.style.left = `${startPct * 100}%`;
-      overlay.style.width = `${(endPct - startPct) * 100}%`;
+      overlay.style.left = `${startPct * totalWidth}px`;
+      overlay.style.width = `${(endPct - startPct) * totalWidth}px`;
       overlay.style.background = 'rgba(245, 158, 11, 0.2)';
       overlay.style.borderLeft = '1px solid var(--accent-amber)';
       overlay.style.borderRight = '1px solid var(--accent-amber)';
@@ -423,9 +566,10 @@ export class AudioCutterModal {
       statLabel.textContent = 'Thời lượng sau khi xóa giữa:';
       const remaining = Math.max(0, dur - (this.endTime - this.startTime));
       statDuration.textContent = formatTime(remaining);
+
     } else if (this.mode === 'split') {
-      overlay.style.left = '0%';
-      overlay.style.width = `${startPct * 100}%`;
+      overlay.style.left = '0px';
+      overlay.style.width = `${startPct * totalWidth}px`;
       overlay.style.background = 'rgba(0, 240, 255, 0.08)';
       overlay.style.borderRight = '2px solid var(--accent-cyan)';
       overlay.style.borderLeft = 'none';
@@ -433,20 +577,43 @@ export class AudioCutterModal {
       textStart.textContent = formatTime(this.startTime);
       statLabel.textContent = 'Điểm chia tách:';
       statDuration.textContent = `${formatTime(this.startTime)} & ${formatTime(dur - this.startTime)}`;
+
+    } else if (this.mode === 'silence') {
+      if (this.silenceSubMode === 'insert') {
+        overlay.style.left = '0px';
+        overlay.style.width = `${startPct * totalWidth}px`;
+        overlay.style.background = 'rgba(16, 185, 129, 0.08)';
+        overlay.style.borderRight = '2px solid var(--accent-teal)';
+        overlay.style.borderLeft = 'none';
+
+        textStart.textContent = formatTime(this.startTime);
+        statLabel.textContent = `Thời lượng sau khi chèn +${this.silenceDuration}s:`;
+        statDuration.textContent = `${formatTime(dur + this.silenceDuration)} (+${this.silenceDuration}s)`;
+      } else {
+        overlay.style.left = `${startPct * totalWidth}px`;
+        overlay.style.width = `${(endPct - startPct) * totalWidth}px`;
+        overlay.style.background = 'rgba(100, 116, 139, 0.25)';
+        overlay.style.borderLeft = '1px solid var(--text-muted)';
+        overlay.style.borderRight = '1px solid var(--text-muted)';
+
+        textStart.textContent = formatTime(this.startTime);
+        textEnd.textContent = formatTime(this.endTime);
+        statLabel.textContent = 'Đoạn tắt tiếng (Mute):';
+        statDuration.textContent = `${formatTime(Math.max(0, this.endTime - this.startTime))} (tổng ${formatTime(dur)})`;
+      }
     }
 
-    // Draw Canvas
-    this.renderWaveformCanvas(canvas, startPct, endPct);
+    // Render Time Ruler & Waveform Canvas
+    this.renderTimeRuler(rulerCanvas, totalWidth, dur);
+    this.renderWaveformCanvas(canvas, totalWidth, startPct, endPct);
   }
 
-  renderWaveformCanvas(canvas, startPct, endPct) {
+  renderTimeRuler(canvas, width, duration) {
     const ctx = canvas.getContext('2d');
-    if (!ctx || !this.currentTrack) return;
+    if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width > 0 ? rect.width : 700;
-    const height = rect.height > 0 ? rect.height : 140;
+    const height = 24;
 
     if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
       canvas.width = Math.round(width * dpr);
@@ -457,16 +624,64 @@ export class AudioCutterModal {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    const peaks = this.currentTrack.waveformPeaks || [];
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.lineWidth = 1;
+
+    // Determine tick interval based on zoom and duration
+    let interval = 1.0;
+    if (this.zoomLevel >= 5) interval = 0.2;
+    else if (this.zoomLevel >= 2.5) interval = 0.5;
+    else if (duration > 60) interval = 5.0;
+    else if (duration > 30) interval = 2.0;
+
+    const totalTicks = Math.ceil(duration / interval);
+
+    for (let i = 0; i <= totalTicks; i++) {
+      const time = i * interval;
+      if (time > duration) break;
+      const x = (time / duration) * width;
+
+      // Draw tick line
+      ctx.beginPath();
+      ctx.moveTo(x, height - 6);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+
+      // Draw label
+      ctx.fillText(formatTime(time), x + 3, height - 8);
+    }
+
+    ctx.restore();
+  }
+
+  renderWaveformCanvas(canvas, width, startPct, endPct) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !this.currentTrack) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const height = 136;
+
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
+    const peaks = this.highResPeaks.length > 0 ? this.highResPeaks : (this.currentTrack.waveformPeaks || []);
     const numBars = peaks.length;
     const totalBarWidth = width / numBars;
-    const barWidth = Math.max(1.5, totalBarWidth - 1.5);
+    const barWidth = Math.max(1.2, totalBarWidth - 1.0);
     const centerY = height / 2;
 
     for (let i = 0; i < numBars; i++) {
       const barPct = i / numBars;
       const peak = Math.max(0.04, peaks[i]);
-      const barHeight = peak * (height - 12);
+      const barHeight = peak * (height - 14);
       const x = i * totalBarWidth;
       const y = centerY - barHeight / 2;
 
@@ -477,11 +692,17 @@ export class AudioCutterModal {
         color = (barPct >= startPct && barPct <= endPct) ? '#f59e0b' : '#00f0ff';
       } else if (this.mode === 'split') {
         color = (barPct <= startPct) ? '#00f0ff' : 'rgba(255, 255, 255, 0.35)';
+      } else if (this.mode === 'silence') {
+        if (this.silenceSubMode === 'insert') {
+          color = (barPct <= startPct) ? '#10b981' : '#00f0ff';
+        } else {
+          color = (barPct >= startPct && barPct <= endPct) ? '#64748b' : '#00f0ff';
+        }
       }
 
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.roundRect(x, y, barWidth, barHeight, 2);
+      ctx.roundRect(x, y, barWidth, barHeight, 1.5);
       ctx.fill();
     }
 
@@ -497,7 +718,7 @@ export class AudioCutterModal {
     const dur = buffer.duration;
     const auditionBtn = this.modalEl.querySelector('#btn-cutter-audition');
     const playhead = this.modalEl.querySelector('#cutter-playhead');
-    const wrap = this.modalEl.querySelector('#cutter-waveform-wrap');
+    const innerWrap = this.modalEl.querySelector('#cutter-waveform-inner');
 
     if (this.mode === 'crop') {
       const playDur = Math.max(0.05, this.endTime - this.startTime);
@@ -522,17 +743,15 @@ export class AudioCutterModal {
           return;
         }
         const curTime = this.startTime + elapsed;
-        playhead.style.left = `${(curTime / dur) * 100}%`;
+        const totalW = innerWrap.clientWidth;
+        playhead.style.left = `${(curTime / dur) * totalW}px`;
         this.animFrame = requestAnimationFrame(update);
       };
       this.animFrame = requestAnimationFrame(update);
 
-      source.onended = () => {
-        this.stopAudition();
-      };
+      source.onended = () => this.stopAudition();
 
     } else if (this.mode === 'cutout') {
-      // Simulate Cut: Spliced audio audition
       const spliced = spliceCutOutAudioBuffer(buffer, this.startTime, this.endTime);
       const source = ctx.createBufferSource();
       source.buffer = spliced;
@@ -542,10 +761,8 @@ export class AudioCutterModal {
       this.activeSource = source;
       this.isPlaying = true;
       auditionBtn.innerHTML = `${icons.pause} <span>Tạm dừng</span>`;
+      source.onended = () => this.stopAudition();
 
-      source.onended = () => {
-        this.stopAudition();
-      };
     } else if (this.mode === 'split') {
       const playDur = Math.max(0.05, this.startTime);
       const source = ctx.createBufferSource();
@@ -556,10 +773,25 @@ export class AudioCutterModal {
       this.activeSource = source;
       this.isPlaying = true;
       auditionBtn.innerHTML = `${icons.pause} <span>Tạm dừng</span>`;
+      source.onended = () => this.stopAudition();
 
-      source.onended = () => {
-        this.stopAudition();
-      };
+    } else if (this.mode === 'silence') {
+      let previewBuffer;
+      if (this.silenceSubMode === 'insert') {
+        previewBuffer = insertSilenceIntoAudioBuffer(buffer, this.startTime, this.silenceDuration);
+      } else {
+        previewBuffer = muteRegionAudioBuffer(buffer, this.startTime, this.endTime);
+      }
+
+      const source = ctx.createBufferSource();
+      source.buffer = previewBuffer;
+      source.connect(ctx.destination);
+      source.start(0);
+
+      this.activeSource = source;
+      this.isPlaying = true;
+      auditionBtn.innerHTML = `${icons.pause} <span>Tạm dừng</span>`;
+      source.onended = () => this.stopAudition();
     }
   }
 
@@ -575,7 +807,7 @@ export class AudioCutterModal {
     this.isPlaying = false;
     const auditionBtn = this.modalEl.querySelector('#btn-cutter-audition');
     if (auditionBtn) {
-      auditionBtn.innerHTML = `${icons.play} <span id="text-btn-audition">${this.mode === 'cutout' ? 'Nghe thử sau khi xóa' : 'Nghe thử vùng chọn'}</span>`;
+      auditionBtn.innerHTML = `${icons.play} <span id="text-btn-audition">Nghe thử</span>`;
     }
     const playhead = this.modalEl.querySelector('#cutter-playhead');
     if (playhead) playhead.style.display = 'none';
@@ -667,6 +899,41 @@ export class AudioCutterModal {
       };
 
       this.callbacks.onSplitTrack(trackA, trackB);
+
+    } else if (this.mode === 'silence') {
+      let finalBuffer;
+      let suffix = '';
+
+      if (this.silenceSubMode === 'insert') {
+        finalBuffer = insertSilenceIntoAudioBuffer(buffer, this.startTime, this.silenceDuration);
+        suffix = `_insert_${this.silenceDuration}s.wav`;
+      } else {
+        finalBuffer = muteRegionAudioBuffer(buffer, this.startTime, this.endTime);
+        suffix = `_mute.wav`;
+      }
+
+      const { peaks } = extractWaveformData(finalBuffer, 120);
+
+      if (createNew) {
+        const newTrack = {
+          ...track,
+          id: 'track_' + Math.random().toString(36).substring(2, 9),
+          name: `${track.name.replace(/\.[^/.]+$/, '')}${suffix}`,
+          audioBuffer: finalBuffer,
+          duration: finalBuffer.duration,
+          trimStart: 0,
+          trimEnd: finalBuffer.duration,
+          waveformPeaks: peaks
+        };
+        this.callbacks.onAddTrack(newTrack, track);
+      } else {
+        track.audioBuffer = finalBuffer;
+        track.duration = finalBuffer.duration;
+        track.trimStart = 0;
+        track.trimEnd = finalBuffer.duration;
+        track.waveformPeaks = peaks;
+        this.callbacks.onUpdateTrack(track);
+      }
     }
 
     this.modalEl.classList.remove('open');

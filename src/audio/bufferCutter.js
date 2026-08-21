@@ -130,3 +130,126 @@ export function splitAudioBuffer(audioBuffer, splitTime) {
 
   return { partA, partB };
 }
+
+/**
+ * Inserts a custom silence duration into an AudioBuffer at insertTime.
+ * E.g., inserting 1.5s of silence at 2.0s into a 4.0s track produces a 5.5s track.
+ * 
+ * @param {AudioBuffer} audioBuffer
+ * @param {number} insertTime (seconds)
+ * @param {number} silenceDuration (seconds)
+ * @param {number} [fadeMs=3] Micro-fade duration in ms to avoid pops
+ * @returns {AudioBuffer}
+ */
+export function insertSilenceIntoAudioBuffer(audioBuffer, insertTime, silenceDuration, fadeMs = 3) {
+  const ctx = getAudioContext();
+  const sampleRate = audioBuffer.sampleRate;
+  const numChannels = audioBuffer.numberOfChannels;
+  const duration = audioBuffer.duration;
+
+  const validInsertTime = Math.max(0, Math.min(duration, insertTime));
+  const validSilence = Math.max(0.01, silenceDuration);
+
+  const insertSample = Math.floor(validInsertTime * sampleRate);
+  const silenceSamples = Math.round(validSilence * sampleRate);
+  const totalLength = audioBuffer.length + silenceSamples;
+
+  const newBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
+  const fadeSamples = Math.min(Math.floor((fadeMs / 1000) * sampleRate), insertSample, audioBuffer.length - insertSample);
+
+  for (let ch = 0; ch < numChannels; ch++) {
+    const sourceData = audioBuffer.getChannelData(ch);
+    const destData = newBuffer.getChannelData(ch);
+
+    // Part 1: before insert point
+    if (insertSample > 0) {
+      destData.set(sourceData.subarray(0, insertSample), 0);
+
+      // Micro fade-out at end of Part 1
+      if (fadeSamples > 0) {
+        const startFade = insertSample - fadeSamples;
+        for (let i = 0; i < fadeSamples; i++) {
+          const gain = 1 - (i / fadeSamples);
+          destData[startFade + i] *= gain;
+        }
+      }
+    }
+
+    // Silence area: zero samples (already initialized to 0 in AudioBuffer)
+
+    // Part 2: after insert point
+    const part2Len = audioBuffer.length - insertSample;
+    if (part2Len > 0) {
+      const destPart2Start = insertSample + silenceSamples;
+      destData.set(sourceData.subarray(insertSample), destPart2Start);
+
+      // Micro fade-in at start of Part 2
+      if (fadeSamples > 0) {
+        for (let i = 0; i < fadeSamples; i++) {
+          const gain = (i / fadeSamples);
+          destData[destPart2Start + i] *= gain;
+        }
+      }
+    }
+  }
+
+  return newBuffer;
+}
+
+/**
+ * Mutes (silences) a specific time range [startTime, endTime] within an AudioBuffer.
+ * Keeps total track duration unchanged.
+ * 
+ * @param {AudioBuffer} audioBuffer
+ * @param {number} startTime (seconds)
+ * @param {number} endTime (seconds)
+ * @param {number} [fadeMs=3] Micro-fade duration in ms
+ * @returns {AudioBuffer}
+ */
+export function muteRegionAudioBuffer(audioBuffer, startTime, endTime, fadeMs = 3) {
+  const ctx = getAudioContext();
+  const sampleRate = audioBuffer.sampleRate;
+  const numChannels = audioBuffer.numberOfChannels;
+  const duration = audioBuffer.duration;
+
+  const validStart = Math.max(0, Math.min(duration, startTime));
+  const validEnd = Math.max(validStart, Math.min(duration, endTime));
+
+  const startSample = Math.floor(validStart * sampleRate);
+  const endSample = Math.floor(validEnd * sampleRate);
+  const fadeSamples = Math.floor((fadeMs / 1000) * sampleRate);
+
+  const newBuffer = ctx.createBuffer(numChannels, audioBuffer.length, sampleRate);
+
+  for (let ch = 0; ch < numChannels; ch++) {
+    const sourceData = audioBuffer.getChannelData(ch);
+    const destData = newBuffer.getChannelData(ch);
+
+    // Copy entire source buffer first
+    destData.set(sourceData);
+
+    // Fade out leading into mute
+    if (fadeSamples > 0 && startSample >= fadeSamples) {
+      const fStart = startSample - fadeSamples;
+      for (let i = 0; i < fadeSamples; i++) {
+        const gain = 1 - (i / fadeSamples);
+        destData[fStart + i] *= gain;
+      }
+    }
+
+    // Zero out the target muted region
+    for (let i = startSample; i < endSample; i++) {
+      destData[i] = 0;
+    }
+
+    // Fade in trailing out of mute
+    if (fadeSamples > 0 && endSample + fadeSamples <= audioBuffer.length) {
+      for (let i = 0; i < fadeSamples; i++) {
+        const gain = (i / fadeSamples);
+        destData[endSample + i] *= gain;
+      }
+    }
+  }
+
+  return newBuffer;
+}
