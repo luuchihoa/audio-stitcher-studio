@@ -167,16 +167,14 @@ export function createTrackElement(track, index, isLast, callbacks) {
     });
   }, 10);
 
-  // Single clip playback
+  // Single clip playback & click-to-play from position
   let clipSource = null;
   const previewBtn = container.querySelector(`#preview-btn-${track.id}`);
   
-  previewBtn.addEventListener('click', async () => {
+  const playClipFromTime = async (startTime) => {
     if (clipSource) {
       try { clipSource.stop(); } catch (e) {}
       clipSource = null;
-      previewBtn.innerHTML = icons.play;
-      return;
     }
 
     const ctx = getAudioContext();
@@ -184,7 +182,8 @@ export function createTrackElement(track, index, isLast, callbacks) {
 
     const trimStart = track.trimStart || 0;
     const trimEnd = track.trimEnd ?? track.duration;
-    const playDuration = Math.max(0.05, trimEnd - trimStart);
+    const actualStart = Math.max(trimStart, Math.min(trimEnd - 0.05, startTime));
+    const playDuration = Math.max(0.05, trimEnd - actualStart);
 
     clipSource = ctx.createBufferSource();
     clipSource.buffer = track.audioBuffer;
@@ -200,8 +199,29 @@ export function createTrackElement(track, index, isLast, callbacks) {
       previewBtn.innerHTML = icons.play;
     };
 
-    clipSource.start(0, trimStart, playDuration);
+    clipSource.start(0, actualStart, playDuration);
     previewBtn.innerHTML = icons.stop;
+  };
+
+  previewBtn.addEventListener('click', () => {
+    if (clipSource) {
+      try { clipSource.stop(); } catch (e) {}
+      clipSource = null;
+      previewBtn.innerHTML = icons.play;
+    } else {
+      playClipFromTime(track.trimStart || 0);
+    }
+  });
+
+  // Click on waveform canvas to play immediately from that timestamp
+  canvas.style.cursor = 'pointer';
+  canvas.title = 'Nhấp vào sóng âm để phát ngay từ vị trí này';
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const pct = clickX / rect.width;
+    const targetTime = pct * track.duration;
+    playClipFromTime(targetTime);
   });
 
   // Open Audio Cutter Modal
